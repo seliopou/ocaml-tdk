@@ -125,10 +125,9 @@ module Make(V:HashCmp)(L:Lattice)(R:Result) = struct
       | _           , Leaf _ -> u
       | (v,l) :: xs', Branch(v', l', t, f) ->
         match V.compare v v' with
-        |  0 -> if L.subset_eq l l' then loop xs' t else loop xs f
-        | -1 -> loop xs' u
-        |  1 -> mk_branch v' l' (loop xs t) (loop xs f)
-        |  _ -> assert false
+        | 0 -> if L.subset_eq l l' then loop xs' t else loop xs f
+        | c when c > 0 -> mk_branch v' l' (loop xs t) (loop xs f)
+        | _ -> loop xs' u
     in
     loop (List.sort (fun (u, _) (v, _) -> V.compare u v) lst)
 
@@ -152,20 +151,17 @@ module Make(V:HashCmp)(L:Lattice)(R:Result) = struct
       else map_r (fun x -> R.prod x r) x
     | Branch(vx, lx, tx, fx), Branch(vy, ly, ty, fy) ->
       begin match V.compare vx vy with
-      |  0 ->
+      | 0 ->
         begin match L.meet ~tight:true lx ly with
         | Some(l) -> mk_branch vx l (prod tx ty) (prod fx fy)
         | None    ->
-          begin match L.compare lx ly with
-          |  0 -> assert false
-          | -1 -> mk_branch vx lx (prod tx (restrict [(vx, lx)] y)) (prod fx y)
-          |  1 -> mk_branch vy ly (prod (restrict [(vy, ly)] x) ty) (prod x fy)
-          |  _ -> assert false
-          end
+          let c = L.compare lx ly in
+          if      c > 0 then mk_branch vy ly (prod (restrict [(vy, ly)] x) ty) (prod x fy)
+          else if c < 0 then mk_branch vx lx (prod tx (restrict [(vx, lx)] y)) (prod fx y)
+          else assert false
         end
-      | -1 -> mk_branch vx lx (prod tx y) (prod fx y)
-      |  1 -> mk_branch vy ly (prod x ty) (prod x fy)
-      |  _ -> assert false
+      | c when c > 0 -> mk_branch vy ly (prod x ty) (prod x fy)
+      | _            -> mk_branch vx lx (prod tx y) (prod fx y)
       end
 
   let rec sum x y =
@@ -182,16 +178,13 @@ module Make(V:HashCmp)(L:Lattice)(R:Result) = struct
         begin match L.join ~tight:true lx ly with
         | Some(l) -> mk_branch vx l (sum tx ty) (sum fx fy)
         | None    ->
-          begin match L.compare lx ly with
-          |  0 -> assert false
-          | -1 -> mk_branch vx lx (sum tx (restrict [(vx, lx)] y)) (sum fx y)
-          |  1 -> mk_branch vy ly (sum (restrict [(vy, ly)] x) ty) (sum x fy)
-          |  _ -> assert false
-          end
+          let c = L.compare lx ly in
+          if      c > 0 then mk_branch vy ly (sum (restrict [(vy, ly)] x) ty) (sum x fy)
+          else if c < 0 then mk_branch vx lx (sum tx (restrict [(vx, lx)] y)) (sum fx y)
+          else assert false
         end
-      | -1 -> mk_branch vx lx (sum tx y) (sum fx y)
-      |  1 -> mk_branch vy ly (sum x ty) (sum x fy)
-      |  _ -> assert false
+      | c when c > 0 -> mk_branch vy ly (sum x ty) (sum x fy)
+      | _ -> mk_branch vx lx (sum tx y) (sum fx y)
       end
 
   module VH = Hashtbl.Make(struct
